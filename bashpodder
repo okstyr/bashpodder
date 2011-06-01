@@ -1,0 +1,95 @@
+#!/bin/bash
+# By Linc 10/1/2004
+# Find the latest script at http://lincgeek.org/bashpodder
+# Revision 1.21 12/04/2008 - Many Contributers!
+# If you use this and have made improvements or have comments
+# drop me an email at linc dot fessenden at gmail dot com
+# I'd appreciate it!
+#
+# modified quite a bit by adrian muhrer
+# last modified 2010-01-27
+# additions so far:
+# - added concept of comments (including the slightly funny rules
+#   for which i don't apologise)
+# - added a optional name field to each line of bp.conf as I had some
+#   podcasts that insisted on no tags, and unguessable names
+#   - hmmm is it really optional - i dont think i tested it
+# - maybe some other small stuff
+# next:
+# - get it to update podcast.log while its pulling files down
+#   not at the end - that way if something kills it, it can resume
+# - after that fwd copy to linc, just to be nice
+
+# Make script crontab friendly:
+cd $(dirname $0)
+
+# create podcast.log if it doesn't exist
+# cos the error freaks some ppl out
+>> podcast.log
+
+# datadir is the directory you want podcasts saved to:
+datadir=$(date +%Y-%m-%d)
+
+# create datadir if necessary:
+mkdir -p $datadir
+
+# Delete any temp file:
+rm -f temp.log
+
+# Read the bp.conf file and wget any url not already in the podcast.log file:
+while read podcast
+        do
+        if [[ -n `echo $podcast|tr -d ' '` ]]
+        then
+            # skip blank lines
+            
+        # look for optional name up the front - seperated from the url by a space
+        name=`echo "$podcast "|cut -d ' ' -f1`
+        fullurl=`echo "$podcast "|cut -d ' ' -f2`
+
+        if [[ -n `echo $podcast|grep '^ *# \+'` ]]
+        then
+            # soz this isn't very standard, but if it goes ^ *# + then
+            # that's a comment and i want to echo it
+            # but if it goes ^ *#[^ ] then its a commented out podcast
+            # and those are just ignored
+            echo $podcast
+        fi
+        #if [[ `echo $podcast|grep '^ *$' || -z `echo $podcast|grep '^ *#'` ]] 
+        if [[ -z `echo $podcast|egrep '^ *#'` ]] 
+        then
+            # don't process anything that has no spaces after the hash
+            # that is just a commented out podcast
+            if [[ -z "$fullurl" ]]
+            then
+                # no name, fix $podcast
+                fullurl=$name
+                name=''
+                display=$name
+            else
+                # otherwise just add a little separator to make it stand out a bit
+                display=$name
+                name="${name}_"
+            fi
+            echo "getting $display"
+            file=$(xsltproc parse_enclosure.xsl $podcast 2> /dev/null || wget -q $podcast -O - | tr '\r' '\n' | tr \' \" | sed -n 's/.*url="\([^"]*\)".*/\1/p')
+            for url in $file
+                do
+                echo $url >> temp.log
+                if ! grep "$url" podcast.log > /dev/null
+                        then
+                        wget -t 10 -U BashPodder -c -q -O $datadir/${name}$(echo "$url" | awk -F'/' {'print $NF'} | awk -F'=' {'print $NF'} | awk -F'?' {'print $1'}) "$url"
+                fi
+            done
+        fi
+        fi
+done < bp.conf
+# Move dynamically created log file to permanent log file:
+
+cat podcast.log >> temp.log
+sort temp.log | uniq > podcast.log
+rm temp.log
+
+# Create an m3u playlist:
+ls $datadir | grep -v m3u > $datadir/podcast.m3u
+

@@ -1,0 +1,101 @@
+JAVASCRIPT:
+
+   1.
+      #!/bin/bash
+   2.
+      # By Linc 10/1/2004
+   3.
+      # Find the latest script at http://linc.homeunix.org:8080/scripts/bashpodder
+   4.
+      # Revision 1.2 09/14/2006 - Many Contributers!
+   5.
+      # If you use this and have made improvements or have comments
+   6.
+      # drop me an email at linc dot fessenden at gmail dot com
+   7.
+      # I'd appreciate it!
+   8.
+   9.
+      # Make script crontab friendly:
+  10.
+      cd $(dirname $0)
+  11.
+  12.
+      # datadir is the directory you want podcasts saved to:
+  13.
+      datadir=$(date +%Y-%m-%d)
+  14.
+  15.
+      # create datadir if necessary:
+  16.
+      mkdir -p $datadir
+  17.
+  18.
+      # Delete any temp file:
+  19.
+      rm -f temp.log
+  20.
+  21.
+      # Read the bp.conf file and wget any url not already in the podcast.log file:
+  22.
+      while read feed
+  23.
+        do
+  24.
+        podcast=`echo $feed | cut -f 1 -d ' '`
+  25.
+        echo $podcast
+  26.
+        file=$(xsltproc parse_enclosure.xsl $podcast 2> /dev/null || wget -q $podcast -O - | tr '\r' '\n' | tr \' \" | sed -n 's/.*url="\([^"]*\)".*/\1/p')
+  27.
+        for url in $file ; do
+  28.
+          echo "Retrieving $url"
+  29.
+          echo $url>> temp.log
+  30.
+          if ! grep "$url" podcast.log> /dev/null
+  31.
+            then
+  32.
+            # wget -t 10 -U BashPodder -c -q -O $datadir/$(echo "$url" | awk -F'/' {'print $NF'} | awk -F'=' {'print $NF'} | awk -F'?' {'print $1'}) "$url"
+  33.
+            outpath=$datadir/$(echo "$url" | awk -F'/' {'print $NF'} | awk -F'=' {'print $NF'} | awk -F'?' {'print $1'})
+  34.
+            curl --retry 10 -C - $url> $outpath
+  35.
+            fullpath=`pwd`/"$outpath"
+  36.
+            /usr/bin/osascript <<-EOF
+  37.
+              tell application "iTunes"
+  38.
+                set posix_path to "$fullpath"
+  39.
+                set mac_path to posix_path as POSIX file
+  40.
+                set new_track to add mac_path
+  41.
+                set genre of new_track to "*Podcast"
+  42.
+              end tell
+  43.
+      EOF
+  44.
+          fi
+  45.
+          done
+  46.
+        done <bp.conf
+  47.
+      # Move dynamically created log file to permanent log file:
+  48.
+      cat podcast.log>> temp.log
+  49.
+      sort temp.log | uniq> podcast.log
+  50.
+      rm temp.log
+  51.
+      # Create an m3u playlist:
+  52.
+      ls $datadir | grep -v m3u> $datadir/podcast.m3u 

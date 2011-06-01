@@ -1,0 +1,70 @@
+#!/bin/bash
+# By Linc 10/1/2004
+# Find the latest script at http://lincgeek.org/bashpodder
+# Revision 1.21 12/04/2008 - Many Contributers!
+# If you use this and have made improvements or have comments
+# drop me an email at linc dot fessenden at gmail dot com
+# I'd appreciate it!
+
+function update_log
+{
+  cat podcast.log >> temp.log
+  sort temp.log | uniq > podcast.log
+  rm temp.log
+}
+
+# Make script crontab friendly:
+cd $(dirname $0)
+
+# create podcast.log if it doesn't exist
+# cos the error freaks some ppl out
+>> podcast.log
+
+# just in case, we abnormally exited in provious run
+update_log
+
+# datadir is the directory you want podcasts saved to:
+datadir=$(date +%Y-%m-%d)
+
+# create datadir if necessary:
+mkdir -p $datadir
+
+# Delete any temp file:
+rm -f temp.log
+
+# Read the bp.conf file and wget any url not already in the podcast.log file:
+while read podcast
+        #skip comments
+        case $podcast in \#*) continue ;; esac
+
+        do
+        # look for optional name up the front - seperated from the url by a space
+        name=`echo "$podcast "|cut -d ' ' -f1`
+        fullurl=`echo "$podcast "|cut -d ' ' -f2`
+        if [[ -z "$fullurl" ]]
+        then
+            # no name, fix $podcast
+            podcast=$name
+            name=''
+        else
+            # otherwise just add a little seperator to make it stand out a bit
+            name="${name}_"
+        fi
+        echo "Doing $name - $podcast"
+        file=$(xsltproc parse_enclosure.xsl $podcast 2> /dev/null || wget -q $podcast -O - | tr '\r' '\n' | tr \' \" | sed -n 's/.*url="\([^"]*\)".*/\1/p')
+        for url in $file
+                do
+                echo $url >> temp.log
+                if ! grep "$url" podcast.log > /dev/null
+                        then
+                        #echo "Getting $url"
+                        wget -t 10 -U BashPodder -c -O $datadir/${name}$(echo "$url" | awk -F'/' {'print $NF'} | awk -F'=' {'print $NF'} | awk -F'?' {'print $1'}) "$url"
+                fi
+                done
+        done < bp.conf
+# Move dynamically created log file to permanent log file:
+update_log
+
+# Create an m3u playlist:
+ls $datadir | grep -v m3u > $datadir/podcast.m3u
+
